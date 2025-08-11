@@ -1,0 +1,726 @@
+
+    <meta charset="utf-8" />
+    <title>Melbourne Parking Map with Routing</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+    <style>
+        html, body {
+            margin: 0; padding: 0; height: 100%;
+            font-family: Arial, sans-serif;
+        }
+        body {
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        
+
+        #sidebar-container {
+            width: 280px;
+            margin: 12px auto;
+            border-radius: 12px;
+            border: 1px solid #bbb;
+            background-color: #f0f0f0;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            max-height: 40px;
+            transition: max-height 0.35s ease;
+            overflow: hidden;
+            user-select: none;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+
+        #sidebar-container.expanded {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        #sidebar-header {
+            padding: 14px 18px;
+            background: linear-gradient(135deg, #355c7d, #6c5b7b);
+            color: #fff;
+            font-weight: 600;
+            font-size: 17px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-radius: 12px;
+            user-select: none;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            transition: background 0.3s ease;
+        }
+        #sidebar-header:hover {
+            background: linear-gradient(135deg, #4a739c, #8c739c);
+        }
+
+        #sidebar-arrow {
+            transition: transform 0.35s ease;
+            font-weight: bold;
+            font-size: 18px;
+        }
+        #sidebar-container.expanded #sidebar-arrow {
+            transform: rotate(90deg);
+        }
+
+        #parking-list {
+            list-style: none;
+            margin: 8px 12px 16px 12px;
+            padding: 0;
+        }
+        #parking-list li {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 14px;
+            border-bottom: 1px solid #ccc;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: background-color 0.25s, box-shadow 0.25s;
+            font-size: 15px;
+            gap: 8px;
+        }
+        #parking-list li:hover {
+            background-color: #d3e3ff;
+            box-shadow: 0 2px 5px rgba(53, 92, 125, 0.3);
+        }
+        .status-default{
+            background:#777;
+            color:#fff;
+        }
+        .status-box {
+            min-width: 70px;
+            padding: 4px 10px;
+            border-radius: 8px;
+            color: white;
+            font-weight: 600;
+            font-size: 13px;
+            text-align: center;
+            user-select: none;
+        }
+        .status-Unoccupied {
+            background-color: #00AA00;
+        }
+        .status-Present {
+            background-color: #D70000;
+        }
+
+        #map {
+            flex-grow: 1;
+            height: 100%;
+        }
+        .prob-box{
+            min-width:56px;
+            padding:4px 8px;
+            margin-right:8px;
+            border-radius:8px;
+            background:#1e88e5;
+            color:#fff;
+            font-weight:600;
+            font-size:12px;
+            text-align:center;
+        }
+
+        .leaflet-control-custom {
+            background-color: white;
+            border: 2px solid #007bff;
+            border-radius: 50%;    /* 大圆 */
+            width: 36px;
+            height: 36px;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 1px 5px rgba(0,0,0,0.65);
+        }
+
+        .loc-icon {
+            width: 12px;
+            height: 12px;
+            background-color: #007bff;
+            border-radius: 50%;
+        }
+
+        .leaflet-control-custom:hover {
+            background-color: #007bff;
+            color: white;
+        }
+   
+        .loc-icon {
+            width: 14px;
+            height: 14px;
+            position: relative;
+        }
+
+        .loc-icon:before, .loc-icon:after {
+            content: '';
+            position: absolute;
+            background-color: #007bff;
+        }
+        .leaflet-control-custom:hover .loc-icon:before,
+        .leaflet-control-custom:hover .loc-icon:after {
+            background-color: white;
+        }
+        .loc-icon:before {
+            left: 6px;
+            top: 0;
+            width: 2px;
+            height: 14px;
+        }
+        .loc-icon:after {
+            top: 6px;
+            left: 0;
+            width: 14px;
+            height: 2px;
+        }
+
+        .leaflet-routing-container {
+            background-color: rgba(255, 255, 255, 0.6);
+            border-radius: 12px;
+            padding: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 13px;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div style="padding:12px; background:#fff; border-radius:12px; margin:12px; box-shadow:0 2px 8px rgba(0,0,0,0.1); max-width:280px;">
+        <label>
+            Address:<br/>
+            <input type="text" id="input-address" placeholder="Enter address or lat,lon. 123 collins Rd, Melbourne" style="width:100%; padding:6px;" />
+        </label>
+        <label style="margin-top:8px; display:block;">
+            Horizon (hours):<br/>
+            <input type="number" id="input-horizon" min="0.5" max="48" step="0.1" value="0.5" style="width:100%; padding:6px;" />
+        </label>
+        <label style="margin-top:8px; display:block;">
+            Target time:
+            <div style="display:flex; gap:8px; margin-top:4px;">
+                <select id="select-day" style="flex:0 0 120px; padding:6px;">
+                    <option value="">-- none --</option>
+                    <option value="today">today</option>
+                    <option value="tomorrow">tomorrow</option>
+                </select>
+                <input type="time" id="input-time" step="300" style="flex:1; padding:6px;" />
+            </div>
+            <small>Use today/tomorrow + HH:MM (24-hour). If blank, fallback to Horizon (hours).</small>
+        </label>
+
+        <button id="btn-predict" style="margin-top:8px; width:100%; padding:8px; background:#355c7d; color:#fff; border:none; border-radius:6px; cursor:pointer;">
+            Predict Parking Bays
+        </button>
+        <div id="predict-error" style="color:red; margin-top:6px; display:none;"></div>
+    </div>
+
+    <div id="sidebar-container">
+        <div id="sidebar-header">
+            Closest 20 Parking Bays
+            <span id="sidebar-arrow">▶</span>
+        </div>
+        <ul id="parking-list"></ul>
+    </div>
+
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+
+    <script>
+        const userLatLng = [-37.8105, 144.9624];
+        const map = L.map('map').setView(userLatLng, 18);
+
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+            maxZoom: 19
+        }).addTo(map);
+
+        const userMarker = L.circleMarker(userLatLng, {
+            radius: 10,
+            color: '#007bff',
+            weight: 3,
+            fillColor: '#3399ff',
+            fillOpacity: 0.8
+        }).addTo(map).bindPopup('Your Location: Melbourne Central').openPopup();
+
+        const markerGroup = L.layerGroup().addTo(map);
+
+        const statusColor = {
+            "unoccupied": "#00AA00",  // green：no car
+            "present": "#D70000"      // red：has car
+        };
+
+        // calculate distance
+        function getDistance(lat1, lon1, lat2, lon2) {
+            function toRad(x) { return x * Math.PI / 180; }
+            const R = 6371e3;
+            const φ1 = toRad(lat1);
+            const φ2 = toRad(lat2);
+            const Δφ = toRad(lat2 - lat1);
+            const Δλ = toRad(lon2 - lon1);
+            const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+
+        function formatDateTime(isoString) {
+            if (!isoString) return 'N/A';
+            const date = new Date(isoString);
+            return date.toLocaleString('en-AU', {
+                year: 'numeric', month: 'long', day: 'numeric',
+                hour: '2-digit', minute: '2-digit', hour12: false
+            }).replace(',', '');
+        }
+
+        const parkingListElem = document.getElementById('parking-list');
+        const sidebarContainer = document.getElementById('sidebar-container');
+        const sidebarHeader = document.getElementById('sidebar-header');
+        const sidebarArrow = document.getElementById('sidebar-arrow');
+
+        sidebarHeader.addEventListener('click', () => {
+            sidebarContainer.classList.toggle('expanded');
+        });
+
+        // Global routing Control
+        let routingControl = null;
+
+        // Draw route
+
+        function showRouteTo(lat, lng) {
+            if (routingControl) {
+                map.removeControl(routingControl);
+            }
+            routingControl = L.Routing.control({
+                waypoints: [
+                    L.latLng(userLatLng[0], userLatLng[1]),
+                    L.latLng(lat, lng)
+                ],
+                routeWhileDragging: false,
+                draggableWaypoints: false,
+                addWaypoints: false,
+                showAlternatives: false,
+                lineOptions: {
+                    styles: [{color: 'blue', opacity: 0.7, weight: 5}]
+                }
+            }).addTo(map);
+        }
+
+        async function loadParkingData() {
+            try {
+                const limit = 100;
+                let offset = 0;
+                let total = null;
+                let allRecords = [];
+
+                while (true) {
+                    const url = `https://data.melbourne.vic.gov.au/api/explore/v2.1/catalog/datasets/on-street-parking-bay-sensors/records?limit=${limit}&offset=${offset}`;
+                    const response = await fetch(url);
+                    const data = await response.json();
+
+                    if (!data.results) {
+                        console.error("API error:", data);
+                        break;
+                    }
+
+                    if (total === null) total = data.total_count;
+
+                    allRecords = allRecords.concat(data.results);
+
+                    offset += limit;
+                    if (offset >= total) break;
+                }
+
+                renderMarkers(allRecords);
+                updateParkingList(allRecords);
+                window._parkingRecords = allRecords;   
+
+            } catch (err) {
+                console.error("Failed to load parking data:", err);
+            }
+        }
+
+        const predictBtn = document.getElementById("btn-predict");
+        const inputAddress = document.getElementById("input-address");
+        const inputHorizon = document.getElementById("input-horizon");
+        const predictError = document.getElementById("predict-error");
+
+        let predictMarkersGroup = L.layerGroup().addTo(map);
+
+        predictBtn.addEventListener("click", async () => {
+            try {
+                predictError.style.display = "none";
+
+                if (!window._parkingRecords || !Array.isArray(window._parkingRecords) || window._parkingRecords.length === 0) {
+                predictError.textContent = "Parking data not loaded yet. Please wait a moment.";
+                predictError.style.display = "block";
+                return;
+                }
+
+                const address = inputAddress.value.trim();
+                let hours = sanitizeHours(inputHorizon.value);
+
+                if (!address) {
+                predictError.textContent = "Please enter an address or lat,lon.";
+                predictError.style.display = "block";
+                return;
+                }
+
+                // 1) Parse address/latitude and longitude → user coordinates
+                const { lat: userLat, lon: userLon } = await resolveAddressOrLatLon(address);
+
+                // 2) Use front-end algorithm to compute _parkingRecords locally
+                const candidates = computeCandidates(window._parkingRecords, userLat, userLon, hours);
+                const { nearest, recommended, top10 } = pickResults(candidates);
+
+                if (!top10.length) {
+                predictError.textContent = "No live bays available.";
+                predictError.style.display = "block";
+                return;
+                }
+
+                // 3) Clear old prediction markers & list
+                predictMarkersGroup.clearLayers();
+                parkingListElem.innerHTML = "";
+
+                // 4) Render top10 on the map & left list
+                top10.forEach((bay, idx) => {
+                const lat = bay.lat, lon = bay.lon;
+
+                const marker = L.circleMarker([lat, lon], {
+                    radius: 10, color: "#3388ff", fillColor: "#66aaff", fillOpacity: 0.7, weight: 2
+                }).addTo(predictMarkersGroup);
+
+                const popupContent = `
+                    <b>KerbsideID:</b> ${bay.KerbsideID}<br/>
+                    <b>Zone:</b> ${bay.zone}<br/>
+                    <b>Current State:</b> ${bay.state_now}<br/>
+                    <b>Distance:</b> ${(bay.distance_km*1000).toFixed(0)} m<br/>
+                    <b>Predicted Free Probability:</b> ${(bay.p_free*100).toFixed(2)}%
+                `;
+                marker.bindPopup(popupContent);
+
+                const li = document.createElement("li");
+                li.textContent = `${idx + 1}. ${(bay.distance_km*1000).toFixed(0)} m`;
+                li.style.cursor = "pointer";
+                li.addEventListener("click", () => {
+                    map.setView([lat, lon], 19);
+                    marker.openPopup();
+                    showRouteTo(lat, lon);
+                });
+                parkingListElem.appendChild(li);
+                });
+
+                // 5) Highlight "Nearest & Recommended" candidates (optional)
+                if (nearest) {
+                // You can also insert two summary rows at the top of the list, or change the style of the marker
+                console.log("Nearest:", nearest);
+                }
+                if (recommended) {
+                console.log("Recommended:", recommended);
+                }
+
+                // 6) Move map center to user address
+                map.setView([userLat, userLon], 17);
+                L.circleMarker([userLat, userLon], {
+                radius: 8, color: "#007bff", weight: 3, fillColor: "#3399ff", fillOpacity: 0.8
+                }).addTo(predictMarkersGroup).bindPopup(`Your input: ${address}`).openPopup();
+
+            } catch (e) {
+                console.error(e);
+                predictError.textContent = e.message || "Failed to compute predictions.";
+                predictError.style.display = "block";
+            }
+            });
+
+
+
+        function renderMarkers(records) {
+            markerGroup.clearLayers();
+            records.forEach(r => {
+                if (!r.location) return;
+
+                const lat = r.location.lat;
+                const lng = r.location.lon;
+
+                if (typeof lat !== 'number' || typeof lng !== 'number') return;
+
+                const status = (r.status_description || '').toLowerCase();
+                const color = statusColor[status] || "blue";
+
+                const popupContent = `
+                    <b>Status:</b> ${r.status_description || 'N/A'}<br/>
+                    <b>Last Updated:</b> ${formatDateTime(r.status_timestamp)}<br/>
+                    <b>Zone Number:</b> ${r.zone_number ?? 'N/A'}<br/>
+                    <b>Kerbside ID:</b> ${r.kerbsideid ?? 'N/A'}
+                `;
+
+                const marker = L.circleMarker([lat, lng], {
+                    radius: 8,
+                    color: "white",
+                    weight: 1,
+                    fillColor: color,
+                    fillOpacity: 0.9
+                }).bindPopup(popupContent);
+
+                marker._customData = r;
+                markerGroup.addLayer(marker);
+            });
+        }
+        // --- Probability helpers ---
+        function sanitizeHours(h){
+            let v = Number(h);
+            if (Number.isNaN(v)) v = 0.5;
+            v = Math.round(v*10)/10;
+            return Math.min(48.0, Math.max(0.5, v));
+        }
+        function stateToBinary(status){
+            const s = (status||"").toLowerCase();
+            return (s === "unoccupied") ? "free" : "occ";
+        }
+        // Average duration 30 minutes → λ = 1/30 per minute
+        const LAM_OCC  = 1.0/30.0;
+        const LAM_FREE = 1.0/30.0;
+
+        function pFreeAfterMinutes(stateNow, minutes){
+            return (stateNow === "free")
+                ? Math.exp(-LAM_FREE*minutes)          // Remain idle for the next H minutes
+                : 1.0 - Math.exp(-LAM_OCC*minutes);    // Release in the next H minutes
+        }
+
+        function updateParkingList(records) {
+            // 1) Filter out records without coordinates
+            const validRecords = records.filter(r =>
+                r.location && typeof r.location.lat === 'number' && typeof r.location.lon === 'number'
+            );
+
+            // 2) Distance (based on the user's blue dot)
+            validRecords.forEach(r => {
+                r.distanceToUser = getDistance(
+                userLatLng[0], userLatLng[1],
+                r.location.lat, r.location.lon
+                ); // meters
+            });
+
+            // 3) Unified prediction duration (prefer today/tomorrow+time; otherwise use Horizon)
+            let hours = 0.5;
+            try { hours = getHorizonHours(); } catch (_) { /* fallback 0.5h */ }
+            const Hm = Math.round(hours * 60);
+
+            // 4) Probability (based on current snapshot + exponential prior)
+            validRecords.forEach(r => {
+                const stateNow = stateToBinary(r.status_description); // 'free' | 'occ'
+                r._p_free = pFreeAfterMinutes(stateNow, Hm);          // 0..1
+            });
+
+            // 5) Take the 20 closest
+            const closest20 = validRecords
+                .slice() // Do not modify the original array
+                .sort((a, b) => a.distanceToUser - b.distanceToUser)
+                .slice(0, 20);
+
+            // 6) Render the left list: Serial number + distance | Probability badge | Status badge
+            parkingListElem.innerHTML = '';
+            closest20.forEach((r, index) => {
+                const li = document.createElement('li');
+
+                // Left: Serial number + distance (meters)
+                const left = document.createElement('span');
+                left.textContent = `${index + 1}. ${r.distanceToUser.toFixed(0)} m`;
+                li.appendChild(left);
+
+                // Middle: Probability badge (requires .prob-box style)
+                const probBox = document.createElement('div');
+                probBox.className = 'prob-box';
+                probBox.textContent = `${(r._p_free * 100).toFixed(0)}%`;
+                li.appendChild(probBox);
+
+                // Right: Status badge (requires existing styles)
+                const statusBox = document.createElement('div');
+                const statusText = r.status_description || 'Unknown';
+                const statusClass = ['Unoccupied', 'Present'].includes(statusText)
+                ? `status-${statusText}` : 'status-default';
+                statusBox.className = `status-box ${statusClass}`;
+                statusBox.textContent = statusText;
+                li.appendChild(statusBox);
+
+                // Click: Map centering + open corresponding marker's popup + draw route
+                li.addEventListener('click', () => {
+                    const lat = r.location.lat;
+                    const lon = r.location.lon;
+
+                    map.setView([lat, lon], 20);
+
+                // Find the corresponding point in markerGroup by kerbsideid and open its popup
+                    markerGroup.eachLayer(marker => {
+                        if (marker._customData && marker._customData.kerbsideid === r.kerbsideid) {
+                        marker.openPopup();
+                        }
+                    });
+
+                // Draw a route (from the user's blue dot to the target point)
+                    if (typeof showRouteTo === 'function') {
+                        showRouteTo(lat, lon);
+                    }
+                });
+
+                parkingListElem.appendChild(li);
+            });
+            }
+
+
+
+        // Back to current location
+
+        const locateControl = L.Control.extend({
+            options: { position: 'topright' },
+            onAdd: function(map) {
+                const container = L.DomUtil.create('div', 'leaflet-control leaflet-control-custom');
+                container.title = "Go to Your Location";
+                container.innerHTML = `<div class="loc-icon"></div>`;
+
+                container.onclick = function() {
+                    map.setView(userLatLng, 18, {animate: true});
+                    userMarker.openPopup();
+
+                };
+
+                L.DomEvent.disableClickPropagation(container);
+                return container;
+            }
+        });
+
+        map.addControl(new locateControl());
+
+        loadParkingData();
+        setInterval(loadParkingData, 300000);
+
+
+        // -------- Time & input helpers --------
+        function sanitizeHours(h) {
+            let v = Number(h);
+            if (Number.isNaN(v)) v = 0.5;
+            v = Math.round(v * 10) / 10;       // keep 1 decimal
+            v = Math.min(48.0, Math.max(0.5, v));
+            return v;
+        }
+        
+        // Unify: Convert relative time (today/tomorrow + HH:MM) to hours; return null if none
+        function hoursFromRelative(dayValue, timeStr) {
+            if (!dayValue || !timeStr) return null;               // No time selected or not filled in
+            const m = timeStr.match(/^(\d{1,2}):(\d{2})$/);
+            if (!m) throw new Error("Time must be HH:MM (24-hour).");
+            let hh = Number(m[1]), mm = Number(m[2]);
+            if (hh<0 || hh>23 || mm<0 || mm>59) throw new Error("HH in [0..23], MM in [0..59].");
+
+            const now = new Date();                                // Use browser local timezone
+            const base = new Date(now);
+            base.setHours(0,0,0,0);
+            const dayOffset = (dayValue === "tomorrow") ? 1 : 0;
+            const target = new Date(base.getTime() + dayOffset*24*3600*1000);
+            target.setHours(hh, mm, 0, 0);
+
+            if (dayValue === "today" && target <= now) {
+                throw new Error("For 'today', the time must be later than now.");
+            }
+            let hours = (target - now) / 3600000;
+            // clamp to [0.5, 48.0] and 1 decimal
+            hours = Math.round(Math.min(48.0, Math.max(0.5, hours)) * 10) / 10;
+            return hours;
+        }
+
+        // Read the final hours for prediction: prioritize relative time, then Horizon input
+        function getHorizonHours() {
+            const daySel = document.getElementById('select-day');
+            const timeInp = document.getElementById('input-time');
+            const horizonInp = document.getElementById('input-horizon');
+
+            // Try relative time
+            try {
+                const h = hoursFromRelative(daySel.value, (timeInp.value || '').trim());
+                if (h != null) return h;
+            } catch (e) {
+                // Throw to caller for error display
+                throw e;
+            }
+
+            // Fallback to Horizon (hours)
+            let v = Number(horizonInp.value);
+            if (Number.isNaN(v)) v = 0.5;
+            v = Math.round(v*10)/10;
+            return Math.min(48.0, Math.max(0.5, v));
+        }
+
+        // Address or "lat,lon" is parsed into coordinates (the browser calls Nominatim)
+        async function resolveAddressOrLatLon(input) {
+        const s = (input || "").trim();
+        const m = s.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+        if (m) {
+            return { lat: Number(m[1]), lon: Number(m[2]) };
+        }
+        // Call public Nominatim (simple usage, consider rate limiting/proxy in production)
+        const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(s)}`;
+        const r = await fetch(url, { headers: { "Accept": "application/json" } });
+        const arr = await r.json();
+        if (!Array.isArray(arr) || arr.length === 0) throw new Error("Address not found.");
+        return { lat: Number(arr[0].lat), lon: Number(arr[0].lon) };
+        }
+
+        // -------- Probability model ((simplified priors consistent with backend)) --------
+        // Average occupied/unoccupied time = 30 minutes ⇒ λ = 1/30 (per minute)
+        // const LAM_OCC  = 1.0 / 30.0;
+        // const LAM_FREE = 1.0 / 30.0;
+
+        function pFreeAfterMinutes(stateNow, minutes) {
+        if (stateNow === "free") {
+            return Math.exp(-LAM_FREE * minutes);      // Remain idle for the next H minutes
+        } else {
+            return 1.0 - Math.exp(-LAM_OCC * minutes); // Release within the next H minutes
+        }
+        }
+
+        function stateToBinary(status_description) {
+        const s = (status_description || "").toLowerCase();
+        if (s === "unoccupied") return "free";
+        // "present" or "occupied" is considered occupied
+        return "occ";
+        }
+
+        // Assemble candidate set and compute metrics (generated from API records)
+        function computeCandidates(records, userLat, userLon, hours) {
+        const Hm = Math.round(hours * 60);
+        const eps = 0.2;
+        const out = [];
+        for (const r of records) {
+            if (!r.location || typeof r.location.lat !== "number" || typeof r.location.lon !== "number") continue;
+            const state_now = stateToBinary(r.status_description);
+            const p = pFreeAfterMinutes(state_now, Hm);
+            const dist_m = getDistance(userLat, userLon, r.location.lat, r.location.lon); // The distance function you have (in meters)
+            const dist_km = dist_m / 1000.0;
+            out.push({
+            KerbsideID: r.kerbsideid,
+            zone: String(r.zone_number ?? ""),
+            state_now: state_now,
+            lat: r.location.lat,
+            lon: r.location.lon,
+            p_free: p,
+            distance_km: dist_km,
+            score_avail_near: p / (dist_km + eps),
+            address: r.address || ""
+            });
+        }
+        return out;
+        }
+
+        function pickResults(cands) {
+        if (!cands.length) return { nearest: null, recommended: null, top10: [] };
+        const nearest = [...cands].sort((a,b)=>a.distance_km-b.distance_km)[0];
+        const recommended = [...cands].sort((a,b)=>b.score_avail_near-a.score_avail_near)[0];
+        const top10 = [...cands].sort((a,b)=>b.score_avail_near-a.score_avail_near).slice(0,10);
+        return { nearest, recommended, top10 };
+        }
+
+    </script>
