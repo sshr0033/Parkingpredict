@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Parking Prediction — Address | Probability | Current Availability</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{
+      --bg:#f6f6f7; --card:#fff; --line:#e6e6e8; --text:#222; --muted:#6b6b6e;
+      --err:#d32f2f; --ok:#0a8a0a; --occ:#d70000;
+      --shadow-sm:0 2px 10px rgba(0,0,0,.04);
+      --shadow:0 8px 24px rgba(0,0,0,.08);
+    }
+    html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:Inter, Arial, Helvetica, sans-serif;}
+    .wrap{max-width:980px;margin:28px auto;padding:0 16px;}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow-sm);padding:20px 22px;}
+    .section{margin-bottom:22px}
+    .label{font-size:14px;font-weight:600;margin-bottom:10px}
+
+    .input, .btn, .selectlike{width:100%;padding:14px 16px;border:1px solid var(--line);border-radius:999px;font-size:15px;background:#fff;box-sizing:border-box;outline:none}
+    .input::placeholder{color:#a9a9ac}
+    .input:focus{border-color:#c9c9cc;box-shadow:0 0 0 3px rgba(0,0,0,.04)}
+    .selectlike{appearance:none;}
+    .btn{background:#808084;color:#fff;font-weight:600;text-align:center;cursor:not-allowed;transition:opacity .15s;border-color:#808084}
+    .btn.enabled{background:#4b4b4f;border-color:#4b4b4f;cursor:pointer}
+    .btn.enabled:hover{opacity:.92}
+
+    /* Segmented control */
+    .seg{display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;width:320px;max-width:100%}
+    .seg button{flex:1;padding:12px 0;border:none;background:#fff;color:#333;font-weight:700;cursor:pointer}
+    .seg button:not(.active){background:#f1f1f3;color:#666;font-weight:600}
+    .seg button.active{background:#7d7d81;color:#fff}
+
+    /* Table */
+    .table-wrap{margin-top:18px;overflow:auto}
+    table{width:100%;border-collapse:collapse;background:#fff;border-radius:14px;overflow:hidden;border:1px solid var(--line)}
+    th,td{padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+    th{background:#fafafa;text-align:left;font-weight:700;font-size:13px;color:#333}
+    td{font-size:14px}
+    .right{text-align:right}
+    .badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:700}
+    .free{background:var(--ok);color:#fff}
+    .occ{background:var(--occ);color:#fff}
+    .muted{color:var(--muted)}
+    .err{display:none;margin-top:12px;background:var(--err);color:#fff;padding:10px 12px;border-radius:10px}
+    .loading{display:none;font-size:13px;color:#555;margin-top:10px}
+
+    /* Empty state */
+    .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;color:#8a8a8d;border:1px dashed #cfcfd2;border-radius:16px;padding:48px 16px;margin-top:14px;background:#fff}
+    .empty svg{width:40px;height:40px;margin-bottom:10px;opacity:.85}
+
+    
+    .pac-container{
+      border:1px solid var(--line) !important;
+      border-radius:16px !important;
+      box-shadow:var(--shadow) !important;
+      overflow:hidden !important;
+      padding:6px 0 !important;
+      z-index:9999 !important;
+      font-family:Inter, Arial, Helvetica, sans-serif !important;
+    }
+    .pac-item{
+      padding:10px 16px !important;
+      border-top:none !important;
+      line-height:1.2 !important;
+      cursor:pointer !important;
+    }
+    .pac-item:hover,
+    .pac-item.pac-item-selected{
+      background:#f1f1f3 !important;
+    }
+    .pac-icon{opacity:.6 !important; margin-right:8px !important;}
+    .pac-item-query{font-weight:700 !important; color:#000 !important;}
+    /* 让列表宽度与输入框一致（Google 默认会做，但某些布局下可备份保障） */
+    .pac-container:empty{display:none;}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <!-- Controls -->
+    <div class="card">
+      <div class="section">
+        <div class="label">Select Location (Melbourne CBD)</div>
+        <input id="input-address" class="input"
+               placeholder="Type an address or use “lat,lon”, e.g., 123 Collins St or -37.81,144.96"
+               autocomplete="off" />
+      </div>
+
+      <div class="section">
+        <div class="label">Select Day</div>
+        <div class="seg" role="tablist" aria-label="Target day">
+          <button id="btn-today" class="active" role="tab" aria-selected="true">Today</button>
+          <button id="btn-tomorrow" role="tab" aria-selected="false">Tomorrow</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="label">Select Time</div>
+        <input id="input-time" class="selectlike" type="time" step="300" inputmode="none" onkeydown="return false" />
+        <div class="muted" id="time-hint" style="margin-top:6px">
+          Please use the time selection on the right-hand side to select a time within the next 48 hours.
+        </div>
+      </div>
+
+      <div class="section">
+        <button id="btn-predict" class="btn">Predict Availability</button>
+        <div id="predict-error" class="err"></div>
+        <div id="predict-loading" class="loading">Loading live parking data and computing…</div>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div class="card" style="margin-top:18px">
+      <div id="empty" class="empty">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 16l5-6 4 4 7-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M3 20h18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <div>Select location, day, and time to see parking prediction</div>
+      </div>
+
+      <div class="table-wrap" id="table-wrap" style="display:none">
+        <table id="result-table">
+          <thead>
+            <tr>
+              <th style="width:56px">#</th>
+              <th>Address</th>
+              <th class="right" style="width:260px">Predicted Success Probability (at target time)</th>
+              <th style="width:200px">Current Availability (real-time)</th>
+            </tr>
+          </thead>
+          <tbody id="result-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+   
+    const $ = id => document.getElementById(id);
+    const ceilTo5Min = d => new Date(Math.ceil(d.getTime()/(5*60*1000))*(5*60*1000));
+    const pad2 = n => (n<10?'0':'')+n;
+    function showErr(msg){ const e=$('predict-error'); e.textContent=msg; e.style.display='block'; }
+    function hideErr(){ const e=$('predict-error'); e.style.display='none'; }
+    function showLoading(b){ $('predict-loading').style.display=b?'block':'none'; }
+    function showEmpty(b){ $('empty').style.display=b?'flex':'none'; $('table-wrap').style.display=b?'none':'block'; }
+
+    let dayIndex = 0; // 0=today, 1=tomorrow
+    function setDay(idx){
+      dayIndex = idx;
+      $('btn-today').classList.toggle('active', idx===0);
+      $('btn-today').setAttribute('aria-selected', String(idx===0));
+      $('btn-tomorrow').classList.toggle('active', idx===1);
+      $('btn-tomorrow').setAttribute('aria-selected', String(idx===1));
+      updateTimeBounds(); validateBtn();
+    }
+    $('btn-today').addEventListener('click', ()=>setDay(0));
+    $('btn-tomorrow').addEventListener('click', ()=>setDay(1));
+
+    function updateTimeBounds(){
+      const ti = $('input-time'); const now = new Date();
+      if(dayIndex===0){ const minD = ceilTo5Min(now); ti.min = pad2(minD.getHours())+':'+pad2(minD.getMinutes()); ti.max = '23:59'; }
+      else { ti.min='00:00'; ti.max='23:59'; }
+      if(ti.value && (ti.value < ti.min || ti.value > ti.max)) ti.value = '';
+      $('time-hint').textContent = "Please use the time selection on the right-hand side to select a time within the next 48 hours.";
+    }
+    $('input-time').addEventListener('keypress', e=>e.preventDefault());
+    $('input-time').addEventListener('paste', e=>e.preventDefault());
+
+    function hoursFromRelative(dayIdx, timeStr){
+      if(!/^\d{2}:\d{2}$/.test(timeStr)) throw new Error("Please select a valid time (HH:MM).");
+      const hh=Number(timeStr.slice(0,2)), mm=Number(timeStr.slice(3,5));
+      const now = new Date();
+      const base = new Date(now); base.setHours(0,0,0,0);
+      const target = new Date(base.getTime() + (dayIdx===1?24*3600*1000:0));
+      target.setHours(hh,mm,0,0);
+      const nowCeil = ceilTo5Min(now);
+      const maxTarget = new Date(now.getTime()+48*3600*1000);
+      if(target <= nowCeil) throw new Error("Time must be in the future.");
+      if(target > maxTarget) throw new Error("Time must be within the next 48 hours.");
+      return (target-now)/3600000;
+    }
+
+    let gPlaceAutocomplete = null;
+    let gPlaceChosen = null; // {lat, lon, formatted_address}
+
+    async function resolveAddressOrLatLon(input){
+      const s=(input||"").trim();
+
+      if(gPlaceChosen && s === gPlaceChosen.formatted_address){
+        return { lat: gPlaceChosen.lat, lon: gPlaceChosen.lon };
+      }
+
+      // 2) Manual "lat,lon"
+      const m=s.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+      if(m){ return { lat:Number(m[1]), lon:Number(m[2]) }; }
+
+      // 3) Fallback: OSM/Nominatim
+      const url=`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(s)}`;
+      const r=await fetch(url,{headers:{Accept:"application/json"}});
+      const arr=await r.json();
+      if(!Array.isArray(arr)||arr.length===0) throw new Error('Address cannot be resolved. Please pick a suggestion or use "lat,lon".');
+      return { lat:Number(arr[0].lat), lon:Number(arr[0].lon) };
+    }
+
+    async function reverseGeocode(lat,lon){
+      try{
+        const url=`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`;
+        const r=await fetch(url,{headers:{Accept:"application/json"}});
+        const data=await r.json();
+        return data && (data.display_name || data.name) || "";
+      }catch(_){ return ""; }
+    }
+    function toRad(x){ return x*Math.PI/180; }
+    function distanceMeters(lat1,lon1,lat2,lon2){
+      const R=6371e3, φ1=toRad(lat1), φ2=toRad(lat2), dφ=toRad(lat2-lat1), dλ=toRad(lon2-lon1);
+      const a=Math.sin(dφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(dλ/2)**2;
+      return 2*R*Math.asin(Math.sqrt(a));
+    }
+    const LAM_OCC=1/30, LAM_FREE=1/30; // per minute
+    const stateToBinary = s => (s||'').toLowerCase()==='unoccupied'?'free':'occ';
+    const pFreeAfterMinutes = (stateNow, m) => stateNow==='free' ? Math.exp(-LAM_FREE*m) : (1-Math.exp(-LAM_OCC*m));
+
+    function computeCandidates(records, userLat, userLon, hours){
+      const Hm=Math.round(hours*60), eps=0.2, out=[];
+      for(const r of records){
+        if(!r.location || typeof r.location.lat!=="number" || typeof r.location.lon!=="number") continue;
+        const p = pFreeAfterMinutes(stateToBinary(r.status_description), Hm);
+        const dist_km = distanceMeters(userLat,userLon,r.location.lat,r.location.lon)/1000;
+        out.push({ lat:r.location.lat, lon:r.location.lon, p_free:p, status_text:r.status_description||"", score_avail_near:p/(dist_km+eps) });
+      }
+      return out;
+    }
+    const pickTop10 = c => [...c].sort((a,b)=>b.score_avail_near-a.score_avail_near).slice(0,10);
+
+    async function loadAllParking(){
+      const limit=100; let offset=0; let total=null; const all=[];
+      while(true){
+        const url=`https://data.melbourne.vic.gov.au/api/explore/v2.1/catalog/datasets/on-street-parking-bay-sensors/records?limit=${limit}&offset=${offset}`;
+        const resp=await fetch(url);
+        const data=await resp.json();
+        if(!data.results) break;
+        if(total===null) total=data.total_count;
+        all.push(...data.results);
+        offset += limit;
+        if(offset>=total) break;
+      }
+      return all;
+    }
+
+    function currentBadge(statusText){
+      const s=(statusText||'').toLowerCase();
+      return s==='unoccupied' ? {txt:'Unoccupied', cls:'free'} : {txt:'Occupied', cls:'occ'};
+    }
+
+    async function renderResults(top10){
+      const tbody=$('result-tbody'); tbody.innerHTML="";
+      let idx=0;
+      for(const it of top10){
+        const b = currentBadge(it.status_text);
+        const tr=document.createElement('tr');
+        tr.innerHTML = `<td>${++idx}</td>
+                        <td class="muted">(resolving address…)</td>
+                        <td class="right">${(it.p_free*100).toFixed(2)}%</td>
+                        <td><span class="badge ${b.cls}">${b.txt}</span></td>`;
+        tbody.appendChild(tr);
+        const addr = await reverseGeocode(it.lat, it.lon);
+        tr.children[1].textContent = addr || `${it.lat.toFixed(6)}, ${it.lon.toFixed(6)}`;
+        tr.children[1].classList.remove('muted');
+      }
+    }
+
+    /* ================= Enable/disable predict button ================= */
+    function validateBtn(){
+      const ok = Boolean($('input-address').value.trim()) && Boolean($('input-time').value);
+      const btn = $('btn-predict');
+      btn.classList.toggle('enabled', ok);
+      btn.disabled = !ok;
+      btn.setAttribute('aria-disabled', String(!ok));
+    }
+    $('input-address').addEventListener('input', validateBtn);
+    $('input-time').addEventListener('input', validateBtn);
+
+    /* ================= Predict action ================= */
+    $('btn-predict').addEventListener('click', async ()=>{
+      if($('btn-predict').disabled) return;
+      hideErr(); showLoading(true);
+      try{
+        const address=($('input-address').value||"").trim();
+        const timeStr=$('input-time').value;
+
+        let hours;
+        try{ hours = hoursFromRelative(dayIndex, timeStr); }
+        catch(e){ showErr(e.message||"Invalid target time."); showLoading(false); return; }
+
+        const {lat:userLat, lon:userLon} = await resolveAddressOrLatLon(address);
+        const records = await loadAllParking();
+        if(!records?.length){ showErr("Failed to fetch live parking data."); showLoading(false); return; }
+
+        const cands = computeCandidates(records, userLat, userLon, hours);
+        const top10 = pickTop10(cands);
+        if(!top10.length){ showErr("No nearby bays to evaluate."); showLoading(false); return; }
+
+        await renderResults(top10);
+        showEmpty(false);
+      }catch(err){
+        console.error(err);
+        showErr(err?.message || "Prediction failed. Please try again later.");
+      }finally{
+        showLoading(false);
+      }
+    });
+
+    function init(){
+      setDay(0);
+      updateTimeBounds();
+      validateBtn();
+    }
+    init();
+
+    window.initGooglePlaces = function () {
+      const input = document.getElementById('input-address');
+      if (!input) return;
+
+      const melbBounds = new google.maps.LatLngBounds(
+        new google.maps.LatLng(-37.835, 144.90),
+        new google.maps.LatLng(-37.770, 144.99)
+      );
+
+      gPlaceAutocomplete = new google.maps.places.Autocomplete(input, {
+        fields: ['formatted_address','geometry','name','types'],
+        bounds: melbBounds,
+        strictBounds: false,
+        componentRestrictions: { country: 'au' }
+      });
+
+      gPlaceAutocomplete.addListener('place_changed', () => {
+        const place = gPlaceAutocomplete.getPlace();
+        if (!place || !place.geometry || !place.geometry.location) {
+          gPlaceChosen = null; return;
+        }
+        const loc = place.geometry.location;
+        const lat = typeof loc.lat === 'function' ? loc.lat() : loc.lat;
+        const lng = typeof loc.lng === 'function' ? loc.lng() : loc.lng;
+
+        gPlaceChosen = {
+          lat, lon: lng,
+          formatted_address: place.formatted_address || place.name || input.value
+        };
+
+        if (gPlaceChosen.formatted_address) {
+          input.value = gPlaceChosen.formatted_address;
+          input.dispatchEvent(new Event('input'));
+        }
+      });
+    };
+  </script>
+
+  <script async defer
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBnerd-DjGaopPAZ5nedwk-x06lxhcYhhQ&libraries=places&language=en&region=AU&callback=initGooglePlaces">
+  </script>
+</body>
+</html>
